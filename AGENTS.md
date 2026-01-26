@@ -1,30 +1,41 @@
 <INSTRUCTIONS>
-## Scope
-These instructions apply to the entire repository.
+## Область действия
+Эти инструкции применяются ко всему репозиторию.
 
-## Project goals
-- Build a lightweight, deterministic, event-driven card game engine in TypeScript.
-- Keep the core (headless logic only) under 42KB gzipped.
-- Separate headless core from UI adapters (DOM/Canvas/CLI).
+## Язык
+- Всегда отвечай на русском.
+- Документацию и комментарии в этом репозитории веди на русском.
 
-## Architecture expectations
-- Fixed turn structure by default: draw → main → combat → end.
-- Extensibility via events, hooks, and plugins.
-- Cards are data (JSON5) while rules remain in TypeScript.
-- Deterministic outcomes: seeded RNG and ordered resolution by priority.
-- Client-server model for online play with an authoritative server.
+## Цели проекта
+- Лёгкое, детерминированное, событийное ядро карточного движка на TypeScript.
+- Вес headless-ядра (только логика) — меньше 42KB gzipped.
+- Чёткое разделение headless-ядра и UI-адаптеров (DOM/Canvas/CLI).
 
-## Performance targets
-- 60 FPS for animations (UI layer).
-- Turn resolution under 20ms even with complex effects.
-- Support 1000+ cards without lag.
+## Архитектурные ожидания
+- Фиксированная базовая структура хода: draw → main → combat → end.
+- Расширяемость через события, хуки и плагины.
+- Карты как данные (JSON5), правила и движок — в TypeScript.
+- Детерминированность: сидируемый RNG и упорядоченное разрешение по priority.
+- Онлайн-режим: авторитетный сервер, клиент отправляет действия и получает состояние.
 
-## Output expectations
-- Prefer headless-first design with adapters.
-- Provide unit tests and basic documentation as development progresses.
-- Keep the core code dependency-light and optimized.
+## Производительность
+- 60 FPS для анимаций (UI слой).
+- Разрешение хода < 20ms даже при сложных эффектах.
+- Поддержка 1000+ карт без лагов.
 
-## Collaboration notes
-- Preserve separation of concerns: core logic vs UI.
-- Ensure plugins/modes are loadable via configuration.
+## Принципы разработки
+- Сначала headless, потом адаптеры представления.
+- Стабильный, предсказуемый цикл и явная фаза разрешения эффектов.
+- Минимум зависимостей, оптимизация критических путей.
+- Лёгкая отладка: трассировка событий и эффектов при необходимости.
+- Безопасность от бесконечных циклов в триггерах и эффектах.
+
+## Ожидания по результату
+- Юнит-тесты и базовая документация добавляются по мере разработки.
+- Сохраняй разделение логики ядра и UI.
+- Плагины и режимы должны подключаться через конфигурации.
+
+## Журнал изменений (обязательно)
+- После каждого изменения кода обновляй файл `CHANGELOG_SHORT.md`.
+- Записывай кратко и без деталей, что было сделано.
 </INSTRUCTIONS>

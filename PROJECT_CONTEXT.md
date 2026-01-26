@@ -1,39 +1,39 @@
-# Card Game Engine — Project Context
+# Карточный движок — контекст проекта
 
-This file captures the heavier, long-form project context so it does not need to live inside `AGENTS.md`.
+Этот файл хранит подробный контекст проекта, чтобы не перегружать `AGENTS.md`.
 
-## Product Goals
-- Build a universal, event-driven card game engine (not tied to a single ruleset).
-- Support multiple archetypes: Hearthstone-like, Magic-like, Slay the Spire, Gwent, classic card games.
-- Keep the core headless (pure logic) and provide adapters for UI layers.
+## Продуктовые цели
+- Универсальный событийный движок, не привязанный к одному набору правил.
+- Поддержка разных типов карточных игр: Hearthstone‑like, Magic‑like, Slay the Spire, Gwent, классические карточные.
+- Headless‑ядро + адаптеры представления (DOM/Canvas/CLI).
 
-## Architecture Summary
-**Fixed turn structure** (default):
+## Архитектура (сводка)
+**Фиксированная структура хода** по умолчанию:
 ```
 phases: ['draw', 'main', 'combat', 'end']
 ```
-Custom behavior is added through hooks:
+Поведение расширяется хуками:
 ```
 onPhaseStart(phase, context) { ... }
 onCardPlay(card, context) { ... }
 ```
 
-**Event-driven core**:
-- Everything emits/consumes events.
-- Cards and mechanics subscribe via triggers with conditions and priorities.
+**Событийная модель**
+- Всё в игре — это события и реакции на них.
+- Карты/механики подписываются на события через триггеры с условиями и приоритетом.
 
-**Effect Resolver**:
-- Collects all modifiers for an effect.
-- Applies in priority order.
-- Ensures deterministic, reproducible outcomes.
+**Effect Resolver (слой разрешения)**
+- Собирает модификаторы эффекта.
+- Применяет в детерминированном порядке по `priority`.
+- Отделяет модификацию эффекта от его исполнения.
 
-## Data & Rules
-- Cards are data (JSON5).
-- Rules and engine logic are TypeScript.
-- Rules must support complex, multi-step mechanics out of the box.
+## Данные и правила
+- Карты — данные (JSON5).
+- Правила и ядро — TypeScript.
+- Правила должны поддерживать сложные многоступенчатые механики из коробки.
 
-## Modes & Plugins
-Examples:
+## Режимы и плагины
+Примеры:
 ```
 GameEngine.use(new GraveyardPlugin())
 GameEngine.use(new ManaSystemPlugin())
@@ -42,31 +42,30 @@ modes/draft.json
 modes/constructed.json
 ```
 
-## Networking
-- Local play (MVP) + hot-seat.
-- Online play: client-server, server-authoritative.
-- WebSocket for real-time state updates.
+## Сеть
+- Локальная игра (MVP) + hot‑seat.
+- Онлайн: клиент‑сервер, сервер авторитетен.
+- WebSocket для real‑time обновлений состояния.
 
-## Performance Targets
-- Core size <42KB gzipped (logic only).
-- UI adapters add ~20–40KB depending on implementation.
-- 60 FPS animation target.
-- Turn resolution <20ms even with complex effects.
-- Smooth handling of 1000+ cards.
+## Производительность
+- Core < 42KB gzipped (только логика).
+- UI‑адаптеры +20–40KB.
+- Цель: 60 FPS, ход < 20ms при сложных эффектах.
+- 1000+ карт без лагов.
 
-## Determinism & Replay
-- Deterministic outcomes from identical states.
-- Seeded RNG for reproducible games.
-- Logs suitable for replay/verification.
+## Детерминизм и replay
+- Детерминированные результаты при одинаковых состояниях.
+- Seeded RNG для воспроизводимости.
+- Логи пригодны для replay/валидации.
 
-## Example Concepts
-**Events**
+## Базовые концепции
+**События**
 - `beforeCardPlay`, `onCardPlayed`, `afterCardPlay`
 - `beforeDamage`, `onDamage`, `afterDamage`
 - `turnStart`, `turnEnd`, `phaseChange`
 - `onDeath`, `onHeal`, `onDraw`
 
-**Entity Model**
+**Модель сущности**
 ```
 entity: {
   id: string,
@@ -77,7 +76,13 @@ entity: {
 }
 ```
 
-**Configurable Zones**
+**Конфигурируемые зоны**
 ```
 zones: ["hand", "deck", "discard", "exile", "field", "row1", "row2"]
 ```
+
+## Принципы проектирования
+- Предсказуемость важнее “магии”: явные фазы, явные эффекты, явный порядок.
+- Никаких скрытых глобальных побочных эффектов.
+- События и эффекты должны быть трассируемыми и воспроизводимыми.
+- Ядро не знает о конкретных типах карт — всё описывается данными и правилами.
