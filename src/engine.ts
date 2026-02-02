@@ -13,6 +13,7 @@ export interface EngineConfig {
   seed: number;
   players: PlayerId[];
   zones?: string[];
+  plugins?: EnginePlugin[];
 }
 
 const DEFAULT_PHASES: Phase[] = ['draw', 'main', 'combat', 'end'];
@@ -56,7 +57,13 @@ export class GameEngine {
       log: [],
     };
 
-    return new GameEngine(initial);
+    const engine = new GameEngine(initial);
+
+    for (const plugin of config.plugins ?? []) {
+      engine.use(plugin);
+    }
+
+    return engine;
   }
 
   use(plugin: EnginePlugin): void {
