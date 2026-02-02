@@ -25,6 +25,7 @@ export interface GameState {
   turn: number;
   phase: Phase;
   activePlayerId: PlayerId;
+  playerOrder: PlayerId[];
   players: Record<PlayerId, PlayerState>;
   entities: Record<string, Entity>;
   log: string[];

@@ -37,6 +37,10 @@ export class GameEngine {
   }
 
   static create(config: EngineConfig): GameEngine {
+    if (config.players.length === 0) {
+      throw new Error('Нельзя создать движок без игроков.');
+    }
+
     const zones = config.zones ?? ['hand', 'deck', 'discard', 'exile', 'field'];
     const players = config.players.reduce<Record<PlayerId, GameState['players'][PlayerId]>>(
       (acc, id) => {
@@ -59,6 +63,7 @@ export class GameEngine {
       turn: 1,
       phase: 'draw',
       activePlayerId: config.players[0],
+      playerOrder: [...config.players],
       players,
       entities: {},
       log: [],
@@ -123,6 +128,7 @@ export class GameEngine {
     this.state.turn += 1;
     this.phaseIndex = 0;
     this.state.phase = this.phases[this.phaseIndex];
+    this.state.activePlayerId = this.getNextActivePlayerId();
     this.emitEvent('turnStart', { turn: this.state.turn });
     this.emitEvent('phaseStart', { phase: this.state.phase });
   }
@@ -137,5 +143,19 @@ export class GameEngine {
 
   log(message: string): void {
     this.state.log.push(message);
+  }
+
+  private getNextActivePlayerId(): PlayerId {
+    const order = this.state.playerOrder;
+    if (order.length === 0) {
+      return this.state.activePlayerId;
+    }
+
+    const currentIndex = order.indexOf(this.state.activePlayerId);
+    if (currentIndex === -1) {
+      return order[0];
+    }
+
+    return order[(currentIndex + 1) % order.length];
   }
 }
