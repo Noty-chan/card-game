@@ -9,10 +9,16 @@ export interface EnginePlugin {
   onRegister?: (engine: GameEngine) => void;
 }
 
+export interface RuleModule {
+  name: string;
+  register: (engine: GameEngine) => void;
+}
+
 export interface EngineConfig {
   seed: number;
   players: PlayerId[];
   zones?: string[];
+  rules?: RuleModule[];
   plugins?: EnginePlugin[];
 }
 
@@ -23,6 +29,7 @@ export class GameEngine {
   readonly rng: SeededRNG;
   readonly phases = [...DEFAULT_PHASES];
   private readonly plugins: EnginePlugin[] = [];
+  private readonly rules: RuleModule[] = [];
   private phaseIndex = 0;
 
   constructor(private state: GameState) {
@@ -59,6 +66,10 @@ export class GameEngine {
 
     const engine = new GameEngine(initial);
 
+    for (const rule of config.rules ?? []) {
+      engine.addRule(rule);
+    }
+
     for (const plugin of config.plugins ?? []) {
       engine.use(plugin);
     }
@@ -69,6 +80,11 @@ export class GameEngine {
   use(plugin: EnginePlugin): void {
     this.plugins.push(plugin);
     plugin.onRegister?.(this);
+  }
+
+  addRule(rule: RuleModule): void {
+    this.rules.push(rule);
+    rule.register(this);
   }
 
   getState(): GameState {
