@@ -1,0 +1,58 @@
+// Пример базового набора карт.
+{
+  set: 'basic',
+  version: 1,
+  cards: [
+    {
+      id: 'core:soldier',
+      name: 'Пехотинец',
+      type: 'unit',
+      cost: 1,
+      text: 'Простой юнит для ранних ходов.',
+      tags: ['unit', 'human'],
+      stats: {
+        attack: 1,
+        health: 1,
+      },
+      rules: ['unit.basicAttack'],
+    },
+    {
+      id: 'core:archer',
+      name: 'Лучник',
+      type: 'unit',
+      cost: 2,
+      text: 'Наносит 1 урон цели при выходе на поле.',
+      tags: ['unit', 'human', 'ranged'],
+      stats: {
+        attack: 1,
+        health: 2,
+      },
+      rules: ['unit.ranged', 'unit.enterDeal1'],
+      effects: [
+        {
+          kind: 'damage',
+          amount: 1,
+          target: 'enemy',
+          timing: 'onEnter',
+        },
+      ],
+    },
+    {
+      id: 'core:fireball',
+      name: 'Огненный шар',
+      type: 'spell',
+      cost: 2,
+      text: 'Нанесите 3 урона вражескому юниту.',
+      tags: ['spell', 'fire'],
+      rules: ['spell.fireball'],
+      effects: [
+        {
+          kind: 'damage',
+          amount: 3,
+          target: 'enemyUnit',
+          timing: 'onPlay',
+        },
+      ],
+    },
+  ],
+}
