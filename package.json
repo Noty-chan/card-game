@@ -1,0 +1,14 @@
+{
+  "name": "card-game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:determinism": "tsx --test tests/determinism.test.ts",
+    "size:headless": "node scripts/measure-headless-size.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.2",
+    "tsx": "^4.7.1"
+  }
+}
