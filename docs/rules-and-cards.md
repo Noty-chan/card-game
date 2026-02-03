@@ -93,7 +93,7 @@ export function createCardRules(cardSet: { cards: Array<{ id: string; rules?: st
     register(engine) {
       const cardIndex = new Map(cardSet.cards.map((card) => [card.id, card]));
 
-      engine.bus.on('cardPlayed', (event) => {
+      engine.bus.subscribe('cardPlayed', (event) => {
         const card = cardIndex.get(event.payload.cardId);
         if (!card?.rules) return;
 

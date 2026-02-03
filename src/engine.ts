@@ -22,14 +22,37 @@ export interface EngineConfig {
   plugins?: EnginePlugin[];
 }
 
+export interface NormalizedEngineConfig {
+  seed: number;
+  players: PlayerId[];
+  zones: string[];
+  rules: RuleModule[];
+  plugins: EnginePlugin[];
+}
+
+const DEFAULT_ZONES = ['hand', 'deck', 'discard', 'exile', 'field'];
 const DEFAULT_PHASES: Phase[] = ['draw', 'main', 'combat', 'end'];
+
+export const normalizeEngineConfig = (
+  config: EngineConfig,
+): NormalizedEngineConfig => {
+  if (config.players.length === 0) {
+    throw new Error('Нельзя создать движок без игроков.');
+  }
+
+  return {
+    seed: config.seed,
+    players: [...config.players],
+    zones: config.zones ? [...config.zones] : [...DEFAULT_ZONES],
+    rules: config.rules ? [...config.rules] : [],
+    plugins: config.plugins ? [...config.plugins] : [],
+  };
+};
 
 export class GameEngine {
   readonly bus = new EventBus();
   readonly rng: SeededRNG;
   readonly phases = [...DEFAULT_PHASES];
-  private readonly plugins: EnginePlugin[] = [];
-  private readonly rules: RuleModule[] = [];
   private phaseIndex = 0;
 
   constructor(private state: GameState) {
@@ -37,17 +60,18 @@ export class GameEngine {
   }
 
   static create(config: EngineConfig): GameEngine {
-    if (config.players.length === 0) {
-      throw new Error('Нельзя создать движок без игроков.');
-    }
-
-    const zones = config.zones ?? ['hand', 'deck', 'discard', 'exile', 'field'];
-    const players = config.players.reduce<Record<PlayerId, GameState['players'][PlayerId]>>(
+    const normalized = normalizeEngineConfig(config);
+    const players = normalized.players.reduce<
+      Record<PlayerId, GameState['players'][PlayerId]>
+    >(
       (acc, id) => {
-        const playerZones = zones.reduce<Record<string, string[]>>((zonesAcc, zone) => {
-          zonesAcc[zone] = [];
-          return zonesAcc;
-        }, {});
+        const playerZones = normalized.zones.reduce<Record<string, string[]>>(
+          (zonesAcc, zone) => {
+            zonesAcc[zone] = [];
+            return zonesAcc;
+          },
+          {},
+        );
         acc[id] = {
           id,
           zones: playerZones,
@@ -59,11 +83,11 @@ export class GameEngine {
     );
 
     const initial: GameState = {
-      seed: config.seed,
+      seed: normalized.seed,
       turn: 1,
       phase: 'draw',
-      activePlayerId: config.players[0],
-      playerOrder: [...config.players],
+      activePlayerId: normalized.players[0],
+      playerOrder: [...normalized.players],
       players,
       entities: {},
       log: [],
@@ -71,11 +95,11 @@ export class GameEngine {
 
     const engine = new GameEngine(initial);
 
-    for (const rule of config.rules ?? []) {
+    for (const rule of normalized.rules) {
       engine.addRule(rule);
     }
 
-    for (const plugin of config.plugins ?? []) {
+    for (const plugin of normalized.plugins) {
       engine.use(plugin);
     }
 
@@ -83,12 +107,10 @@ export class GameEngine {
   }
 
   use(plugin: EnginePlugin): void {
-    this.plugins.push(plugin);
     plugin.onRegister?.(this);
   }
 
   addRule(rule: RuleModule): void {
-    this.rules.push(rule);
     rule.register(this);
   }
 

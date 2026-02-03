@@ -11,12 +11,17 @@
 
 ## Документация
 - [Публичный API](docs/api.md)
-- 
+- [Правила и данные карт](docs/rules-and-cards.md)
+
+## Конфигурация ядра
+Движок создаётся через `GameEngine.create(config)`. Для фиксации дефолтов можно
+использовать `normalizeEngineConfig(config)`, которая заполняет `zones`, `rules` и
+`plugins` значениями по умолчанию (пустые массивы и базовые зоны).
 ## Контроль размера headless-ядра
 Целевой порог — менее 42KB gzipped для логического ядра. Проверка размера выполняется скриптом:
 
 ```
 npm run size:headless
 ```
-- [Правила и данные карт](docs/rules-and-cards.md)
 
+Отчёт последней проверки: [docs/size-audit.md](docs/size-audit.md).
