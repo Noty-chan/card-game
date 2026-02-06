@@ -35,3 +35,41 @@ export interface GameContext {
   state: GameState;
   activePlayerId: PlayerId;
 }
+
+export type GameAction =
+  | {
+      type: 'playCard';
+      playerId: PlayerId;
+      cardId: string;
+      fromZone?: string;
+      toZone?: string;
+    }
+  | {
+      type: 'attack';
+      playerId: PlayerId;
+      attackerId: string;
+      targetId?: string;
+    }
+  | {
+      type: 'endPhase';
+      playerId: PlayerId;
+    }
+  | {
+      type: 'activateAbility';
+      playerId: PlayerId;
+      sourceId: string;
+      abilityId: string;
+      targetId?: string;
+    };
+
+export interface ActionValidationError {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  action: GameAction;
+  errors?: ActionValidationError[];
+}

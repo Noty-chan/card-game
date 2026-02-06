@@ -1,7 +1,15 @@
 import type { Effect } from './effects';
 import { resolveEffects } from './effects';
 import { EventBus } from './events';
-import type { GameContext, GameState, Phase, PlayerId } from './types';
+import type {
+  ActionResult,
+  ActionValidationError,
+  GameAction,
+  GameContext,
+  GameState,
+  Phase,
+  PlayerId,
+} from './types';
 import { SeededRNG } from './rng';
 
 export interface EnginePlugin {
@@ -242,6 +250,145 @@ export class GameEngine {
 
   log(message: string): void {
     this.state.log.push(message);
+  }
+
+  dispatchAction(action: GameAction): ActionResult {
+    this.emitEvent('actionReceived', { action });
+
+    const errors = this.validateAction(action);
+    if (errors.length > 0) {
+      const result: ActionResult = { ok: false, action, errors };
+      this.emitEvent('actionRejected', { action, errors });
+      return result;
+    }
+
+    this.applyAction(action);
+    const result: ActionResult = { ok: true, action };
+    this.emitEvent('actionApplied', { action });
+    return result;
+  }
+
+  validateAction(action: GameAction): ActionValidationError[] {
+    const errors: ActionValidationError[] = [];
+    const player = this.state.players[action.playerId];
+
+    if (!player) {
+      errors.push({
+        code: 'unknown_player',
+        message: 'Игрок не найден.',
+        details: { playerId: action.playerId },
+      });
+      return errors;
+    }
+
+    if (action.playerId !== this.state.activePlayerId) {
+      errors.push({
+        code: 'not_active_player',
+        message: 'Ходит другой игрок.',
+        details: { activePlayerId: this.state.activePlayerId },
+      });
+    }
+
+    if (action.type === 'playCard') {
+      const fromZone = action.fromZone ?? 'hand';
+      const toZone = action.toZone ?? 'field';
+      const fromList = player.zones[fromZone];
+      const toList = player.zones[toZone];
+
+      if (!fromList) {
+        errors.push({
+          code: 'unknown_zone',
+          message: 'Зона источника не найдена.',
+          details: { zone: fromZone },
+        });
+      } else if (!fromList.includes(action.cardId)) {
+        errors.push({
+          code: 'card_not_in_zone',
+          message: 'Карта отсутствует в зоне.',
+          details: { cardId: action.cardId, zone: fromZone },
+        });
+      }
+
+      if (!toList) {
+        errors.push({
+          code: 'unknown_zone',
+          message: 'Зона назначения не найдена.',
+          details: { zone: toZone },
+        });
+      }
+    }
+
+    if (action.type === 'attack') {
+      if (!this.state.entities[action.attackerId]) {
+        errors.push({
+          code: 'unknown_attacker',
+          message: 'Атакующий объект не найден.',
+          details: { attackerId: action.attackerId },
+        });
+      }
+
+      if (action.targetId && !this.state.entities[action.targetId]) {
+        errors.push({
+          code: 'unknown_target',
+          message: 'Цель атаки не найдена.',
+          details: { targetId: action.targetId },
+        });
+      }
+    }
+
+    if (action.type === 'activateAbility') {
+      if (!this.state.entities[action.sourceId]) {
+        errors.push({
+          code: 'unknown_source',
+          message: 'Источник способности не найден.',
+          details: { sourceId: action.sourceId },
+        });
+      }
+    }
+
+    return errors;
+  }
+
+  applyAction(action: GameAction): void {
+    switch (action.type) {
+      case 'playCard': {
+        const fromZone = action.fromZone ?? 'hand';
+        const toZone = action.toZone ?? 'field';
+        const zones = this.state.players[action.playerId].zones;
+        const fromList = zones[fromZone];
+        const toList = zones[toZone];
+        if (!fromList || !toList) {
+          return;
+        }
+        const index = fromList.indexOf(action.cardId);
+        if (index !== -1) {
+          fromList.splice(index, 1);
+        }
+        toList.push(action.cardId);
+        this.log(`action:playCard:${action.playerId}:${action.cardId}`);
+        return;
+      }
+      case 'attack': {
+        this.log(
+          `action:attack:${action.playerId}:${action.attackerId}:${action.targetId ?? 'none'}`,
+        );
+        return;
+      }
+      case 'activateAbility': {
+        this.log(
+          `action:activateAbility:${action.playerId}:${action.sourceId}:${action.abilityId}`,
+        );
+        return;
+      }
+      case 'endPhase': {
+        this.log(`action:endPhase:${action.playerId}:${this.state.phase}`);
+        this.nextPhase();
+        return;
+      }
+      default: {
+        return;
+      }
+    }
   }
 
   private resolvePhaseIndex(phase?: Phase): number {
