@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:determinism": "tsx --test tests/determinism.test.ts",
+    "test:determinism": "tsx --test tests/determinism.test.ts tests/event-chain-guard.test.ts",
     "size:headless": "node scripts/measure-headless-size.mjs"
   },
   "devDependencies": {
