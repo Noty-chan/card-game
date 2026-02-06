@@ -94,3 +94,51 @@ export interface ScheduleActionInput {
 Метод `emitEvent(...)` отслеживает глубину вложенных вызовов событий. Если глубина
 превышает `maxEventChain`, движок выбрасывает ошибку и прерывает обработку.
 Это защищает ядро от неконтролируемой рекурсии в правилах и плагинах.
+
+## Команды и dispatchAction
+
+Движок поддерживает двухэтапный пайплайн команд: чистая валидация и применение
+(мутация состояния и событий).
+
+```ts
+export type GameAction =
+  | { type: 'playCard'; playerId: PlayerId; cardId: string; fromZone?: string; toZone?: string }
+  | { type: 'attack'; playerId: PlayerId; attackerId: string; targetId?: string }
+  | { type: 'endPhase'; playerId: PlayerId }
+  | {
+      type: 'activateAbility';
+      playerId: PlayerId;
+      sourceId: string;
+      abilityId: string;
+      targetId?: string;
+    };
+
+export interface ActionValidationError {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  action: GameAction;
+  errors?: ActionValidationError[];
+}
+```
+
+### `engine.dispatchAction(action)`
+
+Публичная точка входа для команд. Внутри выполняется:
+
+1. `actionReceived` — событие о принятой команде.
+2. `validateAction(action)` — чистая проверка без мутаций.
+3. При ошибках: `actionRejected` и возврат `ActionResult` с `ok = false`.
+4. При успехе: `applyAction(action)` → `actionApplied` → `ActionResult` с `ok = true`.
+
+### `engine.validateAction(action)`
+
+Возвращает список ошибок валидации. Не изменяет `GameState`.
+
+### `engine.applyAction(action)`
+
+Применяет команду к `GameState` и при необходимости вызывает события и фазовые переходы.
