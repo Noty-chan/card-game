@@ -12,6 +12,8 @@
 | `rules` | `RuleModule[]` | Список модулей правил, регистрируемых при создании движка. По умолчанию: пустой массив. |
 | `plugins` | `EnginePlugin[]` | Список плагинов, подключаемых после регистрации правил. По умолчанию: пустой массив. |
 | `maxEventChain` | `number` | Лимит глубины цепочки событий и лимит разрешения отложенных действий. По умолчанию: `1024`. |
+| `traceEnabled` | `boolean` | Включает сбор трассировки событий движка. По умолчанию: `false`. |
+| `traceLimit` | `number` | Максимальный размер буфера трассировки. По умолчанию: `256`. |
 
 ## normalizeEngineConfig
 
@@ -29,6 +31,8 @@
 | `rules` | `RuleModule[]` | Модули правил (может быть пустым массивом). |
 | `plugins` | `EnginePlugin[]` | Плагины (может быть пустым массивом). |
 | `maxEventChain` | `number` | Эффективный лимит глубины цепочки событий и разрешения отложенных действий. |
+| `traceEnabled` | `boolean` | Признак включённой трассировки. |
+| `traceLimit` | `number` | Эффективный лимит буфера трассировки. |
 
 ## Контракты RuleModule и EnginePlugin
 
@@ -94,6 +98,31 @@ export interface ScheduleActionInput {
 Метод `emitEvent(...)` отслеживает глубину вложенных вызовов событий. Если глубина
 превышает `maxEventChain`, движок выбрасывает ошибку и прерывает обработку.
 Это защищает ядро от неконтролируемой рекурсии в правилах и плагинах.
+
+## TraceEntry и трассировка
+
+Трассировка — лёгкий буфер последних событий движка. Записи собираются для
+`emitEvent`, `applyEffects` и `flushScheduledActions`, если включён `traceEnabled`.
+
+```ts
+export interface TraceEntry {
+  timestamp: number;
+  turn: number;
+  phase: Phase;
+  sourceType: string;
+  sourceId: string;
+  eventType: string;
+  depth: number;
+}
+```
+
+### `engine.getTrace()`
+
+Возвращает копию текущего буфера трассировки.
+
+### `engine.clearTrace()`
+
+Полностью очищает буфер трассировки и сбрасывает счётчик глубины.
 
 ## Команды и dispatchAction
 
