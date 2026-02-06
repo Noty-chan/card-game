@@ -11,6 +11,7 @@
 | `zones` | `string[]` | Список зон, которые будут созданы для каждого игрока. По умолчанию: `hand`, `deck`, `discard`, `exile`, `field`. |
 | `rules` | `RuleModule[]` | Список модулей правил, регистрируемых при создании движка. По умолчанию: пустой массив. |
 | `plugins` | `EnginePlugin[]` | Список плагинов, подключаемых после регистрации правил. По умолчанию: пустой массив. |
+| `cardRegistry` | `CardRegistry` | Реестр карт, используемый для поиска определений карт при `playCard`. |
 | `maxEventChain` | `number` | Лимит глубины цепочки событий и лимит разрешения отложенных действий. По умолчанию: `1024`. |
 | `traceEnabled` | `boolean` | Включает сбор трассировки событий движка. По умолчанию: `false`. |
 | `traceLimit` | `number` | Максимальный размер буфера трассировки. По умолчанию: `256`. |
@@ -30,6 +31,7 @@
 | `zones` | `string[]` | Зоны с учётом дефолтов. |
 | `rules` | `RuleModule[]` | Модули правил (может быть пустым массивом). |
 | `plugins` | `EnginePlugin[]` | Плагины (может быть пустым массивом). |
+| `cardRegistry` | `CardRegistry` | Реестр карт (может быть пустым). |
 | `maxEventChain` | `number` | Эффективный лимит глубины цепочки событий и разрешения отложенных действий. |
 | `traceEnabled` | `boolean` | Признак включённой трассировки. |
 | `traceLimit` | `number` | Эффективный лимит буфера трассировки. |
@@ -245,6 +247,51 @@ export interface ActionResult {
 ### `engine.applyAction(action)`
 
 Применяет команду к `GameState` и при необходимости вызывает события и фазовые переходы.
+
+## Реестр карт и схемы
+
+```ts
+export class CardRegistry {
+  registerCard(card: CardDefinition): void;
+  registerCards(cards: CardDefinition[]): void;
+  registerCardSet(cardSet: CardSetDefinition): void;
+  getCard(cardId: string): CardDefinition | undefined;
+}
+```
+
+`CardRegistry` хранит описания карт и валидирует схему. Движок использует реестр
+в `dispatchAction(playCard)` для поиска карты и преобразования декларативных
+эффектов в runtime-эффекты.
+
+### `engine.getCardDefinition(cardId)`
+
+Возвращает определение карты из реестра или `undefined`, если карта не найдена.
+
+### Минимальный DSL эффектов
+
+```ts
+type CardEffectDefinition =
+  | { kind: 'draw'; amount: number; target?: 'self' | 'opponent'; delayTurns?: number; phase?: Phase }
+  | { kind: 'damage'; amount: number; resource?: string; target?: 'self' | 'opponent'; delayTurns?: number; phase?: Phase }
+  | {
+      kind: 'gainResource';
+      amount: number;
+      resource: string;
+      target?: 'self' | 'opponent';
+      delayTurns?: number;
+      phase?: Phase;
+    }
+  | {
+      kind: 'summon';
+      entityId?: string;
+      targetZone?: string;
+      stats?: Record<string, number>;
+      tags?: string[];
+      target?: 'self' | 'opponent';
+      delayTurns?: number;
+      phase?: Phase;
+    };
+```
 
 ## Завершение игры
 

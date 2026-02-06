@@ -23,6 +23,12 @@
         health: 1,
       },
       rules: ['unit.basicAttack'],
+      effects: [
+        {
+          kind: 'summon',
+          targetZone: 'field',
+        },
+      ],
     },
   ],
 }
@@ -44,7 +50,39 @@
 - `tags` — массив тегов для фильтрации/поиска.
 - `stats` — опциональные характеристики, например `{ attack, health }` для юнитов.
 - `rules` — массив идентификаторов правил/эффектов, которые должны применяться к карте.
-- `effects` — необязательный массив параметров эффекта, если нужно хранить данные для правил.
+- `effects` — необязательный массив декларативных эффектов карты (минимальный DSL).
+
+## Минимальный DSL эффектов
+
+Минимальный набор эффектов хранится прямо в JSON5 и преобразуется в runtime-эффекты
+ядра:
+
+- `draw` — добор карт.
+- `damage` — урон по ресурсу (по умолчанию `health`).
+- `gainResource` — получение ресурса.
+- `summon` — создание сущности и помещение её в зону.
+
+Общие поля эффектов:
+- `delayTurns` — задержка в ходах (опционально).
+- `phase` — фаза, в которой эффект должен быть разрешён (опционально).
+- `priority` — приоритет разрешения эффектов.
+
+Пример эффектов:
+
+```json5
+{
+  kind: 'draw',
+  amount: 2,
+  target: 'self',
+}
+{
+  kind: 'damage',
+  amount: 3,
+  target: 'opponent',
+  delayTurns: 1,
+  phase: 'draw',
+}
+```
 
 ## Сценарии загрузки и инициализации
 
@@ -53,17 +91,20 @@
 ```ts
 import fs from 'node:fs';
 import JSON5 from 'json5';
-import { GameEngine } from '../src/engine';
+import { CardRegistry, GameEngine } from '../src/engine';
 import { createCardRules } from '../src/rules/cards';
 
 const raw = fs.readFileSync('examples/cards/basic.json5', 'utf8');
 const cardSet = JSON5.parse(raw);
+const cardRegistry = new CardRegistry();
+cardRegistry.registerCardSet(cardSet);
 
 const engine = GameEngine.create({
   seed: 42,
   players: ['p1', 'p2'],
   zones: ['hand', 'deck', 'discard'],
   rules: [createCardRules(cardSet)],
+  cardRegistry,
 });
 
 engine.startTurn();
@@ -73,6 +114,12 @@ engine.startTurn();
 - JSON5 хранит только данные карт.
 - Логика находится в правилах, подключаемых через `RuleModule`.
 - UI может отдельно использовать `cardSet` для отображения.
+
+## Реестр карт и розыгрыш
+
+`CardRegistry` хранит проверенные описания карт и позволяет ядру получать
+определение карты при `dispatchAction({ type: 'playCard', ... })`. Это нужно для
+преобразования DSL эффектов в runtime-эффекты и постановки отложенных действий.
 
 ## Связь данных карт с правилами через RuleModule
 
