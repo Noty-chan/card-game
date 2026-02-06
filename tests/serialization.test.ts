@@ -81,6 +81,8 @@ const createState = (variant: 'a' | 'b'): GameState => {
     seed: 42,
     turn: 3,
     phase: 'main',
+    status: 'running',
+    winnerIds: [],
     activePlayerId: 'P1',
     playerOrder: ['P1', 'P2'],
     players,

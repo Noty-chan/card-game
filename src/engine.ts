@@ -26,6 +26,22 @@ export interface RuleModule {
   register: (engine: GameEngine) => void;
 }
 
+export interface VictoryRule {
+  id: string;
+  evaluate: (context: GameContext) => {
+    winnerIds: PlayerId[];
+    finishedReason?: string;
+  } | null;
+}
+
+export interface EliminationRule {
+  id: string;
+  evaluate: (context: GameContext) => {
+    eliminatedIds: PlayerId[];
+    reason?: string;
+  } | null;
+}
+
 export interface EngineConfig {
   seed: number;
   players: PlayerId[];
@@ -186,6 +202,9 @@ export class GameEngine {
   private activeEventChain = 0;
   private scheduledActions: ScheduledAction[] = [];
   private scheduledActionOrder = 0;
+  private victoryRules: VictoryRule[] = [];
+  private eliminationRules: EliminationRule[] = [];
+  private eliminatedPlayerIds = new Set<PlayerId>();
   private trace: TraceEntry[] = [];
   private traceEnabled: boolean;
   private traceLimit: number;
@@ -232,6 +251,8 @@ export class GameEngine {
       seed: normalized.seed,
       turn: 1,
       phase: 'draw',
+      status: 'running',
+      winnerIds: [],
       activePlayerId: normalized.players[0],
       playerOrder: [...normalized.players],
       players,
@@ -263,6 +284,14 @@ export class GameEngine {
 
   addRule(rule: RuleModule): void {
     rule.register(this);
+  }
+
+  registerVictoryRule(rule: VictoryRule): void {
+    this.victoryRules.push(rule);
+  }
+
+  registerEliminationRule(rule: EliminationRule): void {
+    this.eliminationRules.push(rule);
   }
 
   getState(): GameState {
@@ -301,6 +330,9 @@ export class GameEngine {
       seed: this.state.seed,
       turn: this.state.turn,
       phase: this.state.phase,
+      status: this.state.status,
+      winnerIds: [...this.state.winnerIds],
+      finishedReason: this.state.finishedReason,
       activePlayerId: this.state.activePlayerId,
       playerOrder: [...this.state.playerOrder],
       players,
@@ -337,6 +369,9 @@ export class GameEngine {
       seed: snapshot.seed,
       turn: snapshot.turn,
       phase: snapshot.phase,
+      status: snapshot.status,
+      winnerIds: [...snapshot.winnerIds],
+      finishedReason: snapshot.finishedReason,
       activePlayerId: snapshot.activePlayerId,
       playerOrder: [...snapshot.playerOrder],
       players,
@@ -373,6 +408,10 @@ export class GameEngine {
 
   nextPhase(): void {
     this.emitEvent('phaseEnd', { phase: this.state.phase });
+    this.evaluateGameOver();
+    if (this.state.status === 'finished') {
+      return;
+    }
     this.phaseIndex += 1;
 
     if (this.phaseIndex >= this.phases.length) {
@@ -387,6 +426,10 @@ export class GameEngine {
 
   endTurn(): void {
     this.emitEvent('turnEnd', { turn: this.state.turn });
+    this.evaluateGameOver();
+    if (this.state.status === 'finished') {
+      return;
+    }
     this.state.turn += 1;
     this.phaseIndex = 0;
     this.state.phase = this.phases[this.phaseIndex];
@@ -497,11 +540,21 @@ export class GameEngine {
     this.applyAction(action);
     const result: ActionResult = { ok: true, action };
     this.emitEvent('actionApplied', { action });
+    this.evaluateGameOver();
     return result;
   }
 
   validateAction(action: GameAction): ActionValidationError[] {
     const errors: ActionValidationError[] = [];
+
+    if (this.state.status === 'finished') {
+      errors.push({
+        code: 'game_finished',
+        message: 'Игра уже завершена.',
+      });
+      return errors;
+    }
+
     const player = this.state.players[action.playerId];
 
     if (!player) {
@@ -579,6 +632,71 @@ export class GameEngine {
     }
 
     return errors;
+  }
+
+  evaluateGameOver(): void {
+    if (this.state.status === 'finished') {
+      return;
+    }
+
+    const context = this.getContext();
+
+    for (const rule of this.eliminationRules) {
+      const result = rule.evaluate(context);
+      if (!result) {
+        continue;
+      }
+      for (const playerId of result.eliminatedIds) {
+        if (this.eliminatedPlayerIds.has(playerId)) {
+          continue;
+        }
+        this.eliminatedPlayerIds.add(playerId);
+        this.emitEvent('playerEliminated', {
+          playerId,
+          reason: result.reason,
+          ruleId: rule.id,
+        });
+      }
+    }
+
+    const winnerIds = new Set<PlayerId>();
+    let finishedReason: string | undefined;
+
+    for (const rule of this.victoryRules) {
+      const result = rule.evaluate(context);
+      if (!result) {
+        continue;
+      }
+      for (const playerId of result.winnerIds) {
+        winnerIds.add(playerId);
+      }
+      if (result.finishedReason) {
+        finishedReason = finishedReason
+          ? `${finishedReason}; ${result.finishedReason}`
+          : result.finishedReason;
+      }
+    }
+
+    if (winnerIds.size === 0) {
+      return;
+    }
+
+    const orderedPlayers = resolveOrderedPlayerIds(
+      this.state.playerOrder,
+      this.state.players,
+    );
+    const orderedWinners = orderedPlayers.filter((id) => winnerIds.has(id));
+    const fallbackWinners = [...winnerIds].filter(
+      (id) => !orderedWinners.includes(id),
+    );
+
+    this.state.status = 'finished';
+    this.state.winnerIds = [...orderedWinners, ...fallbackWinners];
+    this.state.finishedReason = finishedReason;
+    this.emitEvent('gameFinished', {
+      winnerIds: [...this.state.winnerIds],
+      reason: this.state.finishedReason,
+    });
   }
 
   applyAction(action: GameAction): void {

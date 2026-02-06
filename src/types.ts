@@ -40,6 +40,9 @@ export interface GameState {
   seed: number;
   turn: number;
   phase: Phase;
+  status: 'running' | 'finished';
+  winnerIds: PlayerId[];
+  finishedReason?: string;
   activePlayerId: PlayerId;
   playerOrder: PlayerId[];
   players: Record<PlayerId, PlayerState>;
@@ -51,6 +54,9 @@ export interface SerializedGameState {
   seed: number;
   turn: number;
   phase: Phase;
+  status: 'running' | 'finished';
+  winnerIds: PlayerId[];
+  finishedReason?: string;
   activePlayerId: PlayerId;
   playerOrder: PlayerId[];
   players: Record<PlayerId, PlayerState>;
