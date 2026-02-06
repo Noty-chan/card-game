@@ -11,7 +11,7 @@
 | `zones` | `string[]` | Список зон, которые будут созданы для каждого игрока. По умолчанию: `hand`, `deck`, `discard`, `exile`, `field`. |
 | `rules` | `RuleModule[]` | Список модулей правил, регистрируемых при создании движка. По умолчанию: пустой массив. |
 | `plugins` | `EnginePlugin[]` | Список плагинов, подключаемых после регистрации правил. По умолчанию: пустой массив. |
-| `maxEventChain` | `number` | Лимит глубины цепочки событий для защиты от бесконечной рекурсии. По умолчанию: `1024`. |
+| `maxEventChain` | `number` | Лимит глубины цепочки событий и лимит разрешения отложенных действий. По умолчанию: `1024`. |
 
 ## normalizeEngineConfig
 
@@ -28,7 +28,7 @@
 | `zones` | `string[]` | Зоны с учётом дефолтов. |
 | `rules` | `RuleModule[]` | Модули правил (может быть пустым массивом). |
 | `plugins` | `EnginePlugin[]` | Плагины (может быть пустым массивом). |
-| `maxEventChain` | `number` | Эффективный лимит глубины цепочки событий. |
+| `maxEventChain` | `number` | Эффективный лимит глубины цепочки событий и разрешения отложенных действий. |
 
 ## Контракты RuleModule и EnginePlugin
 
@@ -51,42 +51,43 @@ export interface EnginePlugin {
 
 При вызове `GameEngine.create(...)` сначала регистрируются все правила из `config.rules`, затем подключаются плагины из `config.plugins`. Это позволяет плагинам опираться на уже зарегистрированные правила.
 
-## Пример инициализации
+## Планировщик отложенных действий
+
+Для расширенных правил доступен встроенный deterministic-планировщик:
 
 ```ts
-import { GameEngine } from '../src/engine';
-
-const coreRules = {
-  name: 'core-rules',
-  register(engine: GameEngine) {
-    engine.bus.subscribe('turnStart', (event, context) => {
-      engine.log(`Старт хода ${event.payload?.turn} для ${context.activePlayerId}`);
-    });
-  },
-};
-
-const debugPlugin = {
-  name: 'debug-plugin',
-  onRegister(engine: GameEngine) {
-    engine.bus.subscribe('phaseStart', (event) => {
-      engine.log(`Фаза: ${event.payload?.phase ?? 'unknown'}`);
-    });
-    engine.bus.subscribe('turnEnd', (event) => {
-      engine.log(`Конец хода ${event.payload?.turn ?? 'unknown'}`);
-    });
-  },
-};
-
-const engine = GameEngine.create({
-  seed: 42,
-  players: ['p1', 'p2'],
-  zones: ['hand', 'deck', 'discard'],
-  rules: [coreRules],
-  plugins: [debugPlugin],
-});
-
-engine.startTurn();
+export interface ScheduleActionInput {
+  id: string;
+  priority?: number;
+  delayTurns?: number;
+  phase?: Phase;
+  run: (context: GameContext) => void;
+}
 ```
+
+### `engine.scheduleAction(input)`
+
+Регистрирует отложенное действие. Порядок разрешения всегда детерминирован:
+1. Ход (`delayTurns` + текущий ход).
+2. Фаза (`phase`, либо текущая фаза, если поле пропущено).
+3. Приоритет (`priority`, по убыванию).
+4. Порядок регистрации.
+5. `id` (лексикографически, как последний tie-breaker).
+
+### `engine.flushScheduledActions()`
+
+Принудительно пытается разрешить все готовые действия для текущих хода/фазы. Обычно
+вызывать вручную не нужно: движок делает это автоматически после `phaseStart` в
+`startTurn`, `nextPhase` и `endTurn`.
+
+### `engine.getScheduledActionsCount()`
+
+Возвращает текущее число ожидающих отложенных действий.
+
+### Защита от бесконечного самопланирования
+
+Если во время `flushScheduledActions()` правила бесконечно планируют новые «готовые сейчас»
+действия, движок прерывает цикл по `maxEventChain` и выбрасывает ошибку.
 
 ## Защита от бесконечных цепочек событий
 
