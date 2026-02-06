@@ -7,6 +7,7 @@ export type {
   EnginePlugin,
   NormalizedEngineConfig,
   RuleModule,
+  ScheduleActionInput,
 } from './engine';
 export { GameEngine, normalizeEngineConfig } from './engine';
 export type { GameContext, GameState, Phase, PlayerId, PlayerState, Entity } from './types';

@@ -32,6 +32,23 @@ export interface NormalizedEngineConfig {
   maxEventChain: number;
 }
 
+export interface ScheduleActionInput {
+  id: string;
+  priority?: number;
+  delayTurns?: number;
+  phase?: Phase;
+  run: (context: GameContext) => void;
+}
+
+interface ScheduledAction {
+  id: string;
+  priority: number;
+  executeAtTurn: number;
+  executeAtPhaseIndex: number;
+  order: number;
+  run: (context: GameContext) => void;
+}
+
 const DEFAULT_ZONES = ['hand', 'deck', 'discard', 'exile', 'field'];
 const DEFAULT_PHASES: Phase[] = ['draw', 'main', 'combat', 'end'];
 const DEFAULT_MAX_EVENT_CHAIN = 1024;
@@ -60,6 +77,8 @@ export class GameEngine {
   readonly maxEventChain: number;
   private phaseIndex = 0;
   private activeEventChain = 0;
+  private scheduledActions: ScheduledAction[] = [];
+  private scheduledActionOrder = 0;
 
   constructor(private state: GameState, maxEventChain = DEFAULT_MAX_EVENT_CHAIN) {
     this.rng = new SeededRNG(state.seed);
@@ -137,6 +156,7 @@ export class GameEngine {
     this.state.phase = this.phases[this.phaseIndex];
     this.emitEvent('turnStart', { turn: this.state.turn });
     this.emitEvent('phaseStart', { phase: this.state.phase });
+    this.flushScheduledActions();
   }
 
   nextPhase(): void {
@@ -150,6 +170,7 @@ export class GameEngine {
 
     this.state.phase = this.phases[this.phaseIndex];
     this.emitEvent('phaseStart', { phase: this.state.phase });
+    this.flushScheduledActions();
   }
 
   endTurn(): void {
@@ -160,10 +181,50 @@ export class GameEngine {
     this.state.activePlayerId = this.getNextActivePlayerId();
     this.emitEvent('turnStart', { turn: this.state.turn });
     this.emitEvent('phaseStart', { phase: this.state.phase });
+    this.flushScheduledActions();
   }
 
   applyEffects(effects: Effect[]): void {
     resolveEffects(effects, this.getContext());
+  }
+
+  scheduleAction(input: ScheduleActionInput): void {
+    const action: ScheduledAction = {
+      id: input.id,
+      priority: input.priority ?? 0,
+      executeAtTurn: this.state.turn + (input.delayTurns ?? 0),
+      executeAtPhaseIndex: this.resolvePhaseIndex(input.phase),
+      order: this.scheduledActionOrder++,
+      run: input.run,
+    };
+    this.scheduledActions.push(action);
+  }
+
+  flushScheduledActions(): void {
+    let resolvedCount = 0;
+
+    while (true) {
+      const nextIndex = this.findNextReadyActionIndex();
+      if (nextIndex === -1) {
+        break;
+      }
+
+      const [action] = this.scheduledActions.splice(nextIndex, 1);
+      resolvedCount += 1;
+      if (resolvedCount > this.maxEventChain) {
+        throw new Error(
+          `Превышен лимит разрешения отложенных действий (${this.maxEventChain}). Возможен бесконечный цикл.`,
+        );
+      }
+
+      this.emitEvent('scheduledActionStart', { id: action.id });
+      action.run(this.getContext());
+      this.emitEvent('scheduledActionEnd', { id: action.id });
+    }
+  }
+
+  getScheduledActionsCount(): number {
+    return this.scheduledActions.length;
   }
 
   emitEvent<TPayload>(type: string, payload?: TPayload): void {
@@ -181,6 +242,70 @@ export class GameEngine {
 
   log(message: string): void {
     this.state.log.push(message);
+  }
+
+  private resolvePhaseIndex(phase?: Phase): number {
+    if (!phase) {
+      return this.phaseIndex;
+    }
+
+    const index = this.phases.indexOf(phase);
+    if (index === -1) {
+      throw new Error(`Неизвестная фаза для отложенного действия: ${String(phase)}`);
+    }
+
+    return index;
+  }
+
+  private findNextReadyActionIndex(): number {
+    let winnerIndex = -1;
+
+    for (let index = 0; index < this.scheduledActions.length; index += 1) {
+      const candidate = this.scheduledActions[index];
+      if (!this.isActionReady(candidate)) {
+        continue;
+      }
+
+      if (winnerIndex === -1) {
+        winnerIndex = index;
+        continue;
+      }
+
+      const winner = this.scheduledActions[winnerIndex];
+      if (this.compareScheduledActions(candidate, winner) < 0) {
+        winnerIndex = index;
+      }
+    }
+
+    return winnerIndex;
+  }
+
+  private isActionReady(action: ScheduledAction): boolean {
+    if (action.executeAtTurn !== this.state.turn) {
+      return false;
+    }
+
+    return action.executeAtPhaseIndex <= this.phaseIndex;
+  }
+
+  private compareScheduledActions(left: ScheduledAction, right: ScheduledAction): number {
+    if (left.executeAtTurn !== right.executeAtTurn) {
+      return left.executeAtTurn - right.executeAtTurn;
+    }
+
+    if (left.executeAtPhaseIndex !== right.executeAtPhaseIndex) {
+      return left.executeAtPhaseIndex - right.executeAtPhaseIndex;
+    }
+
+    if (left.priority !== right.priority) {
+      return right.priority - left.priority;
+    }
+
+    if (left.order !== right.order) {
+      return left.order - right.order;
+    }
+
+    return left.id.localeCompare(right.id);
   }
 
   private getNextActivePlayerId(): PlayerId {
