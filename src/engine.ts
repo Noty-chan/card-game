@@ -9,7 +9,10 @@ import type {
   GameState,
   Phase,
   PlayerId,
+  SerializedEntity,
+  SerializedGameState,
   TraceEntry,
+  JsonValue,
 } from './types';
 import { SeededRNG } from './rng';
 
@@ -67,6 +70,94 @@ const DEFAULT_PHASES: Phase[] = ['draw', 'main', 'combat', 'end'];
 const DEFAULT_MAX_EVENT_CHAIN = 1024;
 const DEFAULT_TRACE_LIMIT = 256;
 
+const sortKeys = (values: string[]): string[] =>
+  [...values].sort((left, right) => left.localeCompare(right));
+
+const normalizeJsonValue = (value: JsonValue): JsonValue => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeJsonValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).map(([key, entryValue]) => [
+      key,
+      normalizeJsonValue(entryValue),
+    ]) as Array<[string, JsonValue]>;
+    entries.sort(([left], [right]) => left.localeCompare(right));
+    const normalized: Record<string, JsonValue> = {};
+    for (const [key, entryValue] of entries) {
+      normalized[key] = entryValue;
+    }
+    return normalized;
+  }
+
+  return value;
+};
+
+const normalizeJsonRecord = (
+  record: Record<string, JsonValue>,
+): Record<string, JsonValue> => {
+  const normalized: Record<string, JsonValue> = {};
+  for (const key of sortKeys(Object.keys(record))) {
+    normalized[key] = normalizeJsonValue(record[key]);
+  }
+  return normalized;
+};
+
+const serializeEntity = (entity: GameState['entities'][string]): SerializedEntity => ({
+  id: entity.id,
+  type: entity.type,
+  stats: [...entity.stats.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  ),
+  tags: [...entity.tags.values()].sort((left, right) =>
+    left.localeCompare(right),
+  ),
+  state: entity.state
+    ? normalizeJsonRecord(entity.state as Record<string, JsonValue>)
+    : undefined,
+});
+
+const deserializeEntity = (entity: SerializedEntity): GameState['entities'][string] => ({
+  id: entity.id,
+  type: entity.type,
+  stats: new Map(entity.stats),
+  tags: new Set(entity.tags),
+  state: entity.state,
+});
+
+const buildOrderedRecord = <T, U>(
+  record: Record<string, T>,
+  orderedKeys: string[],
+  valueMapper: (value: T) => U,
+): Record<string, U> => {
+  const result: Record<string, U> = {};
+  for (const key of orderedKeys) {
+    result[key] = valueMapper(record[key]);
+  }
+  return result;
+};
+
+const resolveOrderedPlayerIds = (
+  playerOrder: PlayerId[],
+  players: Record<PlayerId, GameState['players'][PlayerId]>,
+): PlayerId[] => {
+  const ordered: PlayerId[] = [];
+  const seen = new Set<PlayerId>();
+  for (const id of playerOrder) {
+    if (players[id]) {
+      ordered.push(id);
+      seen.add(id);
+    }
+  }
+  for (const id of sortKeys(Object.keys(players))) {
+    if (!seen.has(id)) {
+      ordered.push(id);
+    }
+  }
+  return ordered;
+};
+
 export const normalizeEngineConfig = (
   config: EngineConfig,
 ): NormalizedEngineConfig => {
@@ -110,6 +201,8 @@ export class GameEngine {
     this.maxEventChain = maxEventChain;
     this.traceEnabled = traceEnabled;
     this.traceLimit = traceLimit;
+    const phaseIndex = this.phases.indexOf(state.phase);
+    this.phaseIndex = phaseIndex === -1 ? 0 : phaseIndex;
   }
 
   static create(config: EngineConfig): GameEngine {
@@ -174,6 +267,84 @@ export class GameEngine {
 
   getState(): GameState {
     return this.state;
+  }
+
+  exportState(): SerializedGameState {
+    const orderedPlayerIds = resolveOrderedPlayerIds(
+      this.state.playerOrder,
+      this.state.players,
+    );
+    const players = buildOrderedRecord(
+      this.state.players,
+      orderedPlayerIds,
+      (player) => ({
+        id: player.id,
+        zones: buildOrderedRecord(
+          player.zones,
+          sortKeys(Object.keys(player.zones)),
+          (zone) => [...zone],
+        ),
+        resources: buildOrderedRecord(
+          player.resources,
+          sortKeys(Object.keys(player.resources)),
+          (value) => value,
+        ),
+      }),
+    );
+    const entities = buildOrderedRecord(
+      this.state.entities,
+      sortKeys(Object.keys(this.state.entities)),
+      (entity) => serializeEntity(entity),
+    );
+
+    return {
+      seed: this.state.seed,
+      turn: this.state.turn,
+      phase: this.state.phase,
+      activePlayerId: this.state.activePlayerId,
+      playerOrder: [...this.state.playerOrder],
+      players,
+      entities,
+      log: [...this.state.log],
+    };
+  }
+
+  static importState(snapshot: SerializedGameState): GameEngine {
+    const players = buildOrderedRecord(
+      snapshot.players,
+      Object.keys(snapshot.players),
+      (player) => ({
+        id: player.id,
+        zones: buildOrderedRecord(
+          player.zones,
+          Object.keys(player.zones),
+          (zone) => [...zone],
+        ),
+        resources: buildOrderedRecord(
+          player.resources,
+          Object.keys(player.resources),
+          (value) => value,
+        ),
+      }),
+    );
+    const entities = buildOrderedRecord(
+      snapshot.entities,
+      Object.keys(snapshot.entities),
+      (entity) => deserializeEntity(entity),
+    );
+
+    const state: GameState = {
+      seed: snapshot.seed,
+      turn: snapshot.turn,
+      phase: snapshot.phase,
+      activePlayerId: snapshot.activePlayerId,
+      playerOrder: [...snapshot.playerOrder],
+      players,
+      entities,
+      log: [...snapshot.log],
+    };
+
+    return new GameEngine(state);
   }
 
   getContext(): GameContext {

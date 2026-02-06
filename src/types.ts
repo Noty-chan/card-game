@@ -2,12 +2,28 @@ export type Phase = 'draw' | 'main' | 'combat' | 'end';
 
 export type PlayerId = string;
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export interface Entity {
   id: string;
   type: string;
   stats: Map<string, number>;
   tags: Set<string>;
   state?: Record<string, unknown>;
+}
+
+export interface SerializedEntity {
+  id: string;
+  type: string;
+  stats: Array<[string, number]>;
+  tags: string[];
+  state?: Record<string, JsonValue>;
 }
 
 export interface Zones {
@@ -28,6 +44,17 @@ export interface GameState {
   playerOrder: PlayerId[];
   players: Record<PlayerId, PlayerState>;
   entities: Record<string, Entity>;
+  log: string[];
+}
+
+export interface SerializedGameState {
+  seed: number;
+  turn: number;
+  phase: Phase;
+  activePlayerId: PlayerId;
+  playerOrder: PlayerId[];
+  players: Record<PlayerId, PlayerState>;
+  entities: Record<string, SerializedEntity>;
   log: string[];
 }
 

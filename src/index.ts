@@ -16,10 +16,13 @@ export type {
   GameAction,
   GameContext,
   GameState,
+  JsonValue,
   Phase,
   PlayerId,
   PlayerState,
   Entity,
+  SerializedEntity,
+  SerializedGameState,
   TraceEntry,
 } from './types';
 export { SeededRNG } from './rng';
