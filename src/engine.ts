@@ -9,6 +9,7 @@ import type {
   GameState,
   Phase,
   PlayerId,
+  TraceEntry,
 } from './types';
 import { SeededRNG } from './rng';
 
@@ -29,6 +30,8 @@ export interface EngineConfig {
   rules?: RuleModule[];
   plugins?: EnginePlugin[];
   maxEventChain?: number;
+  traceEnabled?: boolean;
+  traceLimit?: number;
 }
 
 export interface NormalizedEngineConfig {
@@ -38,6 +41,8 @@ export interface NormalizedEngineConfig {
   rules: RuleModule[];
   plugins: EnginePlugin[];
   maxEventChain: number;
+  traceEnabled: boolean;
+  traceLimit: number;
 }
 
 export interface ScheduleActionInput {
@@ -60,6 +65,7 @@ interface ScheduledAction {
 const DEFAULT_ZONES = ['hand', 'deck', 'discard', 'exile', 'field'];
 const DEFAULT_PHASES: Phase[] = ['draw', 'main', 'combat', 'end'];
 const DEFAULT_MAX_EVENT_CHAIN = 1024;
+const DEFAULT_TRACE_LIMIT = 256;
 
 export const normalizeEngineConfig = (
   config: EngineConfig,
@@ -75,6 +81,8 @@ export const normalizeEngineConfig = (
     rules: config.rules ? [...config.rules] : [],
     plugins: config.plugins ? [...config.plugins] : [],
     maxEventChain: config.maxEventChain ?? DEFAULT_MAX_EVENT_CHAIN,
+    traceEnabled: config.traceEnabled ?? false,
+    traceLimit: Math.max(1, config.traceLimit ?? DEFAULT_TRACE_LIMIT),
   };
 };
 
@@ -87,10 +95,21 @@ export class GameEngine {
   private activeEventChain = 0;
   private scheduledActions: ScheduledAction[] = [];
   private scheduledActionOrder = 0;
+  private trace: TraceEntry[] = [];
+  private traceEnabled: boolean;
+  private traceLimit: number;
+  private traceDepth = 0;
 
-  constructor(private state: GameState, maxEventChain = DEFAULT_MAX_EVENT_CHAIN) {
+  constructor(
+    private state: GameState,
+    maxEventChain = DEFAULT_MAX_EVENT_CHAIN,
+    traceEnabled = false,
+    traceLimit = DEFAULT_TRACE_LIMIT,
+  ) {
     this.rng = new SeededRNG(state.seed);
     this.maxEventChain = maxEventChain;
+    this.traceEnabled = traceEnabled;
+    this.traceLimit = traceLimit;
   }
 
   static create(config: EngineConfig): GameEngine {
@@ -127,7 +146,12 @@ export class GameEngine {
       log: [],
     };
 
-    const engine = new GameEngine(initial, normalized.maxEventChain);
+    const engine = new GameEngine(
+      initial,
+      normalized.maxEventChain,
+      normalized.traceEnabled,
+      normalized.traceLimit,
+    );
 
     for (const rule of normalized.rules) {
       engine.addRule(rule);
@@ -157,6 +181,15 @@ export class GameEngine {
       state: this.state,
       activePlayerId: this.state.activePlayerId,
     };
+  }
+
+  getTrace(): TraceEntry[] {
+    return [...this.trace];
+  }
+
+  clearTrace(): void {
+    this.trace = [];
+    this.traceDepth = 0;
   }
 
   startTurn(): void {
@@ -193,7 +226,16 @@ export class GameEngine {
   }
 
   applyEffects(effects: Effect[]): void {
-    resolveEffects(effects, this.getContext());
+    const traceStarted = this.beginTrace({
+      sourceType: 'effects',
+      sourceId: `batch:${effects.length}`,
+      eventType: 'applyEffects',
+    });
+    try {
+      resolveEffects(effects, this.getContext());
+    } finally {
+      this.endTrace(traceStarted);
+    }
   }
 
   scheduleAction(input: ScheduleActionInput): void {
@@ -209,25 +251,34 @@ export class GameEngine {
   }
 
   flushScheduledActions(): void {
+    const traceStarted = this.beginTrace({
+      sourceType: 'scheduledActions',
+      sourceId: `pending:${this.scheduledActions.length}`,
+      eventType: 'flushScheduledActions',
+    });
     let resolvedCount = 0;
 
-    while (true) {
-      const nextIndex = this.findNextReadyActionIndex();
-      if (nextIndex === -1) {
-        break;
-      }
+    try {
+      while (true) {
+        const nextIndex = this.findNextReadyActionIndex();
+        if (nextIndex === -1) {
+          break;
+        }
 
-      const [action] = this.scheduledActions.splice(nextIndex, 1);
-      resolvedCount += 1;
-      if (resolvedCount > this.maxEventChain) {
-        throw new Error(
-          `Превышен лимит разрешения отложенных действий (${this.maxEventChain}). Возможен бесконечный цикл.`,
-        );
-      }
+        const [action] = this.scheduledActions.splice(nextIndex, 1);
+        resolvedCount += 1;
+        if (resolvedCount > this.maxEventChain) {
+          throw new Error(
+            `Превышен лимит разрешения отложенных действий (${this.maxEventChain}). Возможен бесконечный цикл.`,
+          );
+        }
 
-      this.emitEvent('scheduledActionStart', { id: action.id });
-      action.run(this.getContext());
-      this.emitEvent('scheduledActionEnd', { id: action.id });
+        this.emitEvent('scheduledActionStart', { id: action.id });
+        action.run(this.getContext());
+        this.emitEvent('scheduledActionEnd', { id: action.id });
+      }
+    } finally {
+      this.endTrace(traceStarted);
     }
   }
 
@@ -236,16 +287,26 @@ export class GameEngine {
   }
 
   emitEvent<TPayload>(type: string, payload?: TPayload): void {
+    const traceStarted = this.beginTrace({
+      sourceType: 'event',
+      sourceId: type,
+      eventType: type,
+    });
     this.activeEventChain += 1;
     if (this.activeEventChain > this.maxEventChain) {
       this.activeEventChain -= 1;
+      this.endTrace(traceStarted);
       throw new Error(
         `Превышен лимит цепочки событий (${this.maxEventChain}). Возможен бесконечный цикл.`,
       );
     }
 
-    this.bus.emit({ type, payload }, this.getContext());
-    this.activeEventChain -= 1;
+    try {
+      this.bus.emit({ type, payload }, this.getContext());
+    } finally {
+      this.activeEventChain -= 1;
+      this.endTrace(traceStarted);
+    }
   }
 
   log(message: string): void {
@@ -467,5 +528,41 @@ export class GameEngine {
     }
 
     return order[(currentIndex + 1) % order.length];
+  }
+
+  private beginTrace(input: {
+    sourceType: string;
+    sourceId: string;
+    eventType: string;
+  }): boolean {
+    if (!this.traceEnabled) {
+      return false;
+    }
+
+    const entry: TraceEntry = {
+      timestamp: Date.now(),
+      turn: this.state.turn,
+      phase: this.state.phase,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      eventType: input.eventType,
+      depth: this.traceDepth,
+    };
+
+    this.trace.push(entry);
+    if (this.trace.length > this.traceLimit) {
+      this.trace.splice(0, this.trace.length - this.traceLimit);
+    }
+
+    this.traceDepth += 1;
+    return true;
+  }
+
+  private endTrace(started: boolean): void {
+    if (!started) {
+      return;
+    }
+
+    this.traceDepth = Math.max(0, this.traceDepth - 1);
   }
 }

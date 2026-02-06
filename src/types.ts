@@ -36,6 +36,16 @@ export interface GameContext {
   activePlayerId: PlayerId;
 }
 
+export interface TraceEntry {
+  timestamp: number;
+  turn: number;
+  phase: Phase;
+  sourceType: string;
+  sourceId: string;
+  eventType: string;
+  depth: number;
+}
+
 export type GameAction =
   | {
       type: 'playCard';

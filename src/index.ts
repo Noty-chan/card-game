@@ -20,5 +20,6 @@ export type {
   PlayerId,
   PlayerState,
   Entity,
+  TraceEntry,
 } from './types';
 export { SeededRNG } from './rng';
