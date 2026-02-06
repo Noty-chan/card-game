@@ -124,6 +124,45 @@ export interface TraceEntry {
 
 Полностью очищает буфер трассировки и сбрасывает счётчик глубины.
 
+## Сериализация состояния
+
+Для сохранения, реплеев и синхронизации предусмотрены сериализация/десериализация
+снимков состояния. Снимок использует только JSON-совместимые типы и фиксированный
+порядок полей/коллекций для детерминированного `JSON.stringify`.
+
+```ts
+export interface SerializedEntity {
+  id: string;
+  type: string;
+  stats: Array<[string, number]>;
+  tags: string[];
+  state?: Record<string, JsonValue>;
+}
+
+export interface SerializedGameState {
+  seed: number;
+  turn: number;
+  phase: Phase;
+  activePlayerId: PlayerId;
+  playerOrder: PlayerId[];
+  players: Record<PlayerId, PlayerState>;
+  entities: Record<string, SerializedEntity>;
+  log: string[];
+}
+```
+
+### `engine.exportState()`
+
+Возвращает снимок `SerializedGameState` с детерминированным порядком ключей.
+`Map`/`Set` сущностей преобразуются в отсортированные массивы, вложенные JSON-объекты
+нормализуются по ключам.
+
+### `GameEngine.importState(snapshot)`
+
+Статический метод, создающий движок из `SerializedGameState`. Восстанавливает
+`Map`/`Set` в сущностях, копирует массивы и словари, после чего возвращает готовый
+экземпляр `GameEngine`.
+
 ## Команды и dispatchAction
 
 Движок поддерживает двухэтапный пайплайн команд: чистая валидация и применение
