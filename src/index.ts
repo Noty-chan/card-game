@@ -3,6 +3,20 @@ export { resolveEffects } from './effects';
 export type { GameEvent, EventHandler } from './events';
 export { EventBus } from './events';
 export type {
+  CardDefinition,
+  CardEffectDefinition,
+  CardEffectTarget,
+  CardSetDefinition,
+} from './cards/card-schema';
+export {
+  assertCardDefinition,
+  assertCardSet,
+  validateCardDefinition,
+  validateCardSet,
+} from './cards/card-schema';
+export { CardRegistry } from './cards/card-registry';
+export { buildCardRuntimePlan } from './cards/card-runtime';
+export type {
   EngineConfig,
   EnginePlugin,
   EliminationRule,

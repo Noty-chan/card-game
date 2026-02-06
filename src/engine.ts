@@ -1,6 +1,9 @@
 import type { Effect } from './effects';
 import { resolveEffects } from './effects';
 import { EventBus } from './events';
+import type { CardDefinition } from './cards/card-schema';
+import { buildCardRuntimePlan } from './cards/card-runtime';
+import type { CardRegistry } from './cards/card-registry';
 import type {
   ActionResult,
   ActionValidationError,
@@ -48,6 +51,7 @@ export interface EngineConfig {
   zones?: string[];
   rules?: RuleModule[];
   plugins?: EnginePlugin[];
+  cardRegistry?: CardRegistry;
   maxEventChain?: number;
   traceEnabled?: boolean;
   traceLimit?: number;
@@ -59,6 +63,7 @@ export interface NormalizedEngineConfig {
   zones: string[];
   rules: RuleModule[];
   plugins: EnginePlugin[];
+  cardRegistry?: CardRegistry;
   maxEventChain: number;
   traceEnabled: boolean;
   traceLimit: number;
@@ -187,6 +192,7 @@ export const normalizeEngineConfig = (
     zones: config.zones ? [...config.zones] : [...DEFAULT_ZONES],
     rules: config.rules ? [...config.rules] : [],
     plugins: config.plugins ? [...config.plugins] : [],
+    cardRegistry: config.cardRegistry,
     maxEventChain: config.maxEventChain ?? DEFAULT_MAX_EVENT_CHAIN,
     traceEnabled: config.traceEnabled ?? false,
     traceLimit: Math.max(1, config.traceLimit ?? DEFAULT_TRACE_LIMIT),
@@ -205,6 +211,7 @@ export class GameEngine {
   private victoryRules: VictoryRule[] = [];
   private eliminationRules: EliminationRule[] = [];
   private eliminatedPlayerIds = new Set<PlayerId>();
+  private cardRegistry?: CardRegistry;
   private trace: TraceEntry[] = [];
   private traceEnabled: boolean;
   private traceLimit: number;
@@ -266,6 +273,7 @@ export class GameEngine {
       normalized.traceEnabled,
       normalized.traceLimit,
     );
+    engine.setCardRegistry(normalized.cardRegistry);
 
     for (const rule of normalized.rules) {
       engine.addRule(rule);
@@ -296,6 +304,14 @@ export class GameEngine {
 
   getState(): GameState {
     return this.state;
+  }
+
+  setCardRegistry(registry?: CardRegistry): void {
+    this.cardRegistry = registry;
+  }
+
+  getCardDefinition(cardId: string): CardDefinition | undefined {
+    return this.cardRegistry?.getCard(cardId);
   }
 
   exportState(): SerializedGameState {
@@ -601,6 +617,13 @@ export class GameEngine {
           details: { zone: toZone },
         });
       }
+      if (this.cardRegistry && !this.cardRegistry.getCard(action.cardId)) {
+        errors.push({
+          code: 'unknown_card',
+          message: 'Карта не найдена в реестре.',
+          details: { cardId: action.cardId },
+        });
+      }
     }
 
     if (action.type === 'attack') {
@@ -715,6 +738,10 @@ export class GameEngine {
           fromList.splice(index, 1);
         }
         toList.push(action.cardId);
+        const card = this.getCardDefinition(action.cardId);
+        if (card) {
+          this.applyCardEffects(card, action.playerId);
+        }
         this.log(`action:playCard:${action.playerId}:${action.cardId}`);
         return;
       }
@@ -853,5 +880,23 @@ export class GameEngine {
     }
 
     this.traceDepth = Math.max(0, this.traceDepth - 1);
+  }
+
+  private applyCardEffects(card: CardDefinition, playerId: PlayerId): void {
+    const plan = buildCardRuntimePlan(card, { playerId });
+    if (plan.immediate.length > 0) {
+      this.applyEffects(plan.immediate);
+    }
+    for (const delayed of plan.delayed) {
+      this.scheduleAction({
+        id: delayed.schedule.id,
+        priority: delayed.schedule.priority,
+        delayTurns: delayed.schedule.delayTurns,
+        phase: delayed.schedule.phase,
+        run: (context) => {
+          resolveEffects([delayed.effect], context);
+        },
+      });
+    }
   }
 }

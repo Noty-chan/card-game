@@ -32,8 +32,7 @@
         {
           kind: 'damage',
           amount: 1,
-          target: 'enemy',
-          timing: 'onEnter',
+          target: 'opponent',
         },
       ],
     },
@@ -49,8 +48,7 @@
         {
           kind: 'damage',
           amount: 3,
-          target: 'enemyUnit',
-          timing: 'onPlay',
+          target: 'opponent',
         },
       ],
     },
