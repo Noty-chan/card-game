@@ -5,9 +5,11 @@ export { EventBus } from './events';
 export type {
   EngineConfig,
   EnginePlugin,
+  EliminationRule,
   NormalizedEngineConfig,
   RuleModule,
   ScheduleActionInput,
+  VictoryRule,
 } from './engine';
 export { GameEngine, normalizeEngineConfig } from './engine';
 export type {

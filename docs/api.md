@@ -42,6 +42,22 @@ export interface RuleModule {
   register: (engine: GameEngine) => void;
 }
 
+export interface VictoryRule {
+  id: string;
+  evaluate: (context: GameContext) => {
+    winnerIds: PlayerId[];
+    finishedReason?: string;
+  } | null;
+}
+
+export interface EliminationRule {
+  id: string;
+  evaluate: (context: GameContext) => {
+    eliminatedIds: PlayerId[];
+    reason?: string;
+  } | null;
+}
+
 export interface EnginePlugin {
   name: string;
   onRegister?: (engine: GameEngine) => void;
@@ -50,6 +66,19 @@ export interface EnginePlugin {
 
 - `RuleModule.register(...)` вызывается всегда и служит для регистрации правил, обработчиков событий и эффектов.
 - `EnginePlugin.onRegister(...)` опционален и вызывается при подключении плагина.
+
+### Регистрация условий победы и устранения
+
+Внутри `RuleModule.register(...)` можно подключать условия завершения игры:
+
+```ts
+engine.registerVictoryRule(victoryRule);
+engine.registerEliminationRule(eliminationRule);
+```
+
+`VictoryRule` возвращает список победителей и опциональную причину завершения.
+`EliminationRule` используется для уведомлений об устранении игроков через событие
+`playerEliminated`.
 
 ### Порядок регистрации
 
@@ -143,6 +172,9 @@ export interface SerializedGameState {
   seed: number;
   turn: number;
   phase: Phase;
+  status: 'running' | 'finished';
+  winnerIds: PlayerId[];
+  finishedReason?: string;
   activePlayerId: PlayerId;
   playerOrder: PlayerId[];
   players: Record<PlayerId, PlayerState>;
@@ -203,6 +235,9 @@ export interface ActionResult {
 3. При ошибках: `actionRejected` и возврат `ActionResult` с `ok = false`.
 4. При успехе: `applyAction(action)` → `actionApplied` → `ActionResult` с `ok = true`.
 
+Если `state.status === 'finished'`, валидация возвращает ошибку `game_finished`,
+и команда отклоняется без мутаций.
+
 ### `engine.validateAction(action)`
 
 Возвращает список ошибок валидации. Не изменяет `GameState`.
@@ -210,3 +245,15 @@ export interface ActionResult {
 ### `engine.applyAction(action)`
 
 Применяет команду к `GameState` и при необходимости вызывает события и фазовые переходы.
+
+## Завершение игры
+
+Метод `engine.evaluateGameOver()` проверяет условия завершения. Он автоматически
+вызывается после ключевых точек: окончания действия, окончания фазы и окончания хода.
+Если обнаружены победители, движок выставляет `state.status = 'finished'`,
+заполняет `winnerIds` и `finishedReason`, а также эмитит `gameFinished`.
+
+### События завершения игры
+
+- `playerEliminated` — игрок устранён (payload: `{ playerId, reason?, ruleId }`).
+- `gameFinished` — игра завершена (payload: `{ winnerIds, reason? }`).
